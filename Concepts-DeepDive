@@ -1,0 +1,684 @@
+  XGBoost — Deep Dive
+
+
+
+  What is it?
+
+
+
+  XGBoost stands for Extreme Gradient Boosting. It's an ensemble method — it builds many decision trees sequentially, where each tree learns from the mistakes of the previous one.
+
+
+
+  How does Gradient Boosting work?
+
+
+
+  Think of it like a team of junior analysts:
+
+  1. Analyst 1 makes predictions — gets some right, some wrong
+
+  2. Analyst 2 focuses only on the cases Analyst 1 got wrong
+
+  3. Analyst 3 focuses on what Analyst 2 still got wrong
+
+  4. ... repeat for N trees
+
+  5. Final answer = weighted vote of all analysts
+
+  
+
+  Each tree corrects the residual error of the ensemble so far. The "gradient" part means it uses calculus (gradient descent) to figure out which direction to correct.
+
+
+
+  Why XGBoost over Random Forest?
+
+
+
+  ┌─────────────────────┬────────────────────────────┬────────────────────────────────────────┐
+
+  │                     │       Random Forest        │                XGBoost                 │
+
+  ├─────────────────────┼────────────────────────────┼────────────────────────────────────────┤
+
+  │ How trees are built │ In parallel, independently │ Sequentially, each corrects the last   │
+
+  ├─────────────────────┼────────────────────────────┼────────────────────────────────────────┤
+
+  │ Bias-variance       │ Low bias, can overfit      │ Better bias-variance balance           │
+
+  ├─────────────────────┼────────────────────────────┼────────────────────────────────────────┤
+
+  │ Speed               │ Faster to train            │ Slower but more accurate               │
+
+  ├─────────────────────┼────────────────────────────┼────────────────────────────────────────┤
+
+  │ Handles imbalance   │ OK                         │ Better, with scale_pos_weight          │
+
+  ├─────────────────────┼────────────────────────────┼────────────────────────────────────────┤
+
+  │ Industry use        │ Common                     │ Standard for tabular data competitions │
+
+  └─────────────────────┴────────────────────────────┴────────────────────────────────────────┘
+
+
+
+  Interview answer: "I chose XGBoost because our data is structured/tabular — exactly the domain where gradient boosting outperforms neural networks. It also has built-in regularization (L1/L2) which helps prevent overfitting on a relatively small
+
+  dataset of 3,600 customers."
+
+
+
+  Key hyperparameters — explain each one
+
+
+
+  ┌──────────────────┬───────────────────────────────────────────────────────────────────────────────┬───────────────────────────┐
+
+  │    Parameter     │                               What it controls                                │      Our best value       │
+
+  ├──────────────────┼───────────────────────────────────────────────────────────────────────────────┼───────────────────────────┤
+
+  │ max_depth        │ How deep each tree grows. Deeper = more complex, more risk of overfitting     │ 3 (shallow = generalized) │
+
+  ├──────────────────┼───────────────────────────────────────────────────────────────────────────────┼───────────────────────────┤
+
+  │ n_estimators     │ How many trees to build                                                       │ 200                       │
+
+  ├──────────────────┼───────────────────────────────────────────────────────────────────────────────┼───────────────────────────┤
+
+  │ learning_rate    │ How much each tree contributes. Lower = slower learning but more robust       │ 0.05                      │
+
+  ├──────────────────┼───────────────────────────────────────────────────────────────────────────────┼───────────────────────────┤
+
+  │ subsample        │ Fraction of training rows used per tree. Adds randomness, reduces overfitting │ 0.9                       │
+
+  ├──────────────────┼───────────────────────────────────────────────────────────────────────────────┼───────────────────────────┤
+
+  │ colsample_bytree │ Fraction of features used per tree. Like Random Forest's feature sampling     │ 0.8                       │
+
+  └──────────────────┴───────────────────────────────────────────────────────────────────────────────┴───────────────────────────┘
+
+
+
+  Interview answer: "We used GridSearchCV with 5-fold cross-validation — 108 parameter combinations × 5 folds = 540 model fits. The key insight from the results was that shallow trees (max_depth=3) outperformed deep trees (max_depth=7). Deep trees were
+
+  memorizing training patterns — overfitting. Shallow trees generalized better to unseen customers."
+
+
+
+  What is ROC-AUC?
+
+
+
+  ROC = Receiver Operating Characteristic curve
+
+  AUC = Area Under that Curve
+
+
+
+  The ROC curve plots:
+
+  - X-axis: False Positive Rate (FPR) — how often we wrongly predicted churn
+
+  - Y-axis: True Positive Rate (TPR) — how often we correctly predicted churn
+
+  
+
+  AUC = probability that the model ranks a randomly chosen churned customer higher than a randomly chosen active customer.
+
+
+
+  ┌──────┬───────────────────────────────────────┐
+
+  │ AUC  │                Meaning                │
+
+  ├──────┼───────────────────────────────────────┤
+
+  │ 0.5  │ Random guessing — useless             │
+
+  ├──────┼───────────────────────────────────────┤
+
+  │ 0.7  │ Acceptable                            │
+
+  ├──────┼───────────────────────────────────────┤
+
+  │ 0.8  │ Good                                  │
+
+  ├──────┼───────────────────────────────────────┤
+
+  │ 0.9+ │ Excellent                             │
+
+  ├──────┼───────────────────────────────────────┤
+
+  │ 1.0  │ Perfect (suspicious — likely leakage) │
+
+  └──────┴───────────────────────────────────────┘
+
+
+
+  Why AUC over accuracy?
+
+  Our dataset was nearly balanced (49% churn, 51% active), but AUC is preferred because it measures ranking quality across all thresholds — not just at the default 0.5 cutoff. A business might want to target the top 20% highest-risk customers, not
+
+  everyone above 50% probability.
+
+
+
+  Interview answer: "We got 0.7347 AUC, which is honest and meaningful. I could have reported a higher number by keeping the data leakage in place, but a model that appears to work and doesn't is worse than a model that's transparent about its
+
+  limitations."
+
+
+
+  ---
+
+  MLflow — Deep Dive
+
+
+
+  What is it?
+
+
+
+  MLflow is an experiment tracking and model management tool. Think of it as a lab notebook for machine learning.
+
+
+
+  What problem does it solve?
+
+  
+
+  Without MLflow, a typical ML workflow looks like this:
+
+  # Attempt 1
+
+  model = XGBoost(max_depth=3)  → AUC 0.71
+
+  # (you forget the exact params) 
+
+  
+
+  # Attempt 2
+
+  model = XGBoost(max_depth=5)  → AUC 0.70
+
+  # (which was better? can you reproduce it?)
+
+  
+
+  With MLflow, every run is logged:
+
+
+
+  with mlflow.start_run(run_name="experiment_1"):
+
+      mlflow.log_params({"max_depth": 3, "n_estimators": 100})
+
+      mlflow.log_metric("roc_auc", 0.7162)
+
+      mlflow.xgboost.log_model(model, "model")
+
+
+
+  Four core MLflow components
+
+
+
+  ┌───────────┬───────────────────────────────────────────────────┐
+
+  │ Component │                   What it does                    │
+
+  ├───────────┼───────────────────────────────────────────────────┤
+
+  │ Tracking  │ Records parameters, metrics, tags per run         │
+
+  ├───────────┼───────────────────────────────────────────────────┤
+
+  │ Projects  │ Packages code for reproducible runs               │
+
+  ├───────────┼───────────────────────────────────────────────────┤
+
+  │ Models    │ Standard format to save and load any ML model     │
+
+  ├───────────┼───────────────────────────────────────────────────┤
+
+  │ Registry  │ Version control for models (staging → production) │
+
+  └───────────┴───────────────────────────────────────────────────┘
+
+
+
+  We used Tracking and Models in this project.
+
+
+
+  Interview answer
+
+
+
+  ▎ "MLflow meant that every time I tried a new hyperparameter combination, I had a complete record — what I tried, what result I got, and the actual model artifact. After GridSearchCV ran 540 fits, I could look at the MLflow UI and immediately see which
+
+  ▎  run produced the best AUC. If someone asks 'how did you get that model?' the answer is always traceable. That's production-grade practice."
+
+
+
+  ---
+
+  K-Means Clustering — Deep Dive
+
+  
+
+  How it works (step by step)
+
+
+
+  1. Choose K (number of clusters)
+
+  2. Randomly place K centroids (cluster centers)
+
+  3. Assign each customer to the nearest centroid
+
+  4. Move each centroid to the average position of its assigned customers
+
+  5. Repeat steps 3–4 until centroids stop moving
+
+
+
+  How did we choose K=4?
+
+
+
+  Elbow Method:
+
+  - Train K-Means for K=2 through K=10
+
+  - Plot inertia (sum of squared distances from each point to its centroid)
+
+  - Inertia always drops as K increases — look for where the drop slows sharply (the "elbow")
+
+  - Our elbow was at K=4 
+
+
+
+  Silhouette Score:
+
+  - Measures how similar a customer is to their own cluster vs. other clusters
+
+  - Range: -1 (wrong cluster) to +1 (perfect fit)
+
+  - Our score peaked at 0.37 at K=4 
+
+  
+
+  Interview answer: "I used two methods to validate K=4 rather than just picking arbitrarily. The elbow told me the inertia gains flatten after K=4 — more clusters give diminishing returns. The silhouette score confirmed the clusters are actually
+
+  meaningful — customers within a segment are more similar to each other than to customers in other segments."
+
+
+
+  Why these 4 features for clustering?
+
+
+
+  We clustered on: Recency, Frequency, LogMonetary, PurchaseSpread
+
+
+
+  - Recency and Frequency: the two strongest behavioral signals
+
+  - LogMonetary: spend level (log-transformed to prevent outliers dominating)
+
+  - PurchaseSpread: tenure signal — a customer active over 9 months is structurally different from one who burst in for 1 month
+
+
+
+  Business interpretation of segments
+
+
+
+  ┌─────────────────┬───────────────────────────────────────────────────────────┐
+
+  │     Segment     │                         Strategy                          │
+
+  ├─────────────────┼───────────────────────────────────────────────────────────┤
+
+  │ Champions (28)  │ Reward them, ask for referrals, give early access         │
+
+  ├─────────────────┼───────────────────────────────────────────────────────────┤
+
+  │ Loyal (1,223)   │ Upsell, cross-sell, loyalty program                       │
+
+  ├─────────────────┼───────────────────────────────────────────────────────────┤
+
+  │ At-Risk (1,395) │ Retention offer NOW — these are your biggest churn risk   │
+
+  ├─────────────────┼───────────────────────────────────────────────────────────┤
+
+  │ Lost (958)      │ Win-back campaign or let them go — ROI calculation needed │
+
+  └─────────────────┴───────────────────────────────────────────────────────────┘
+
+
+
+  Interview answer: "The segmentation is where the churn model becomes actionable. A churn probability score alone doesn't tell you what to do. Knowing a customer is At-Risk AND has high monetary value tells you to prioritize them for a personal
+
+  retention offer. A Lost customer with low monetary value might not be worth the spend."
+
+
+
+  ---
+
+  Collaborative Filtering — Deep Dive
+
+  
+
+  What is it?
+
+
+
+  The idea: customers who bought similar things in the past will likely want similar things in the future.
+
+
+
+  We used item-based collaborative filtering (not user-based).
+
+
+
+  Item-based vs User-based
+
+
+
+  ┌────────────────┬────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────┐
+
+  │                │                   User-based                   │                            Item-based                             │
+
+  ├────────────────┼────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────┤
+
+  │ Logic          │ Find similar users, recommend what they liked  │ Find similar items, recommend items similar to what you've bought │
+
+  ├────────────────┼────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────┤
+
+  │ Scales better? │ No — comparing all pairs of users is expensive │ Yes — product catalog is smaller than user base                   │
+
+  ├────────────────┼────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────┤
+
+  │ More stable?   │ No — user behavior changes                     │ Yes — item similarity is more stable                              │
+
+  └────────────────┴────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────┘
+
+
+
+  How we built it
+
+
+
+  1. Build a customer × product matrix
+
+    - Rows = customers, Columns = product StockCodes, Values = purchase count
+
+    - Most values are 0 (sparse matrix)
+
+  2. Compute cosine similarity between all product pairs
+
+    - Cosine similarity = angle between two vectors
+
+    - Two products often bought by the same customers have a high cosine similarity
+
+    - Range: 0 (nothing in common) to 1 (identical purchase patterns)
+
+  3. For each customer:
+
+    - Look at their purchased products
+
+    - Find the most similar products they haven't bought yet
+
+    - Return top 5
+
+
+
+  The cold-start problem and our fix
+
+
+
+  Problem: If a customer has only bought 1 product, we don't have enough signal to find meaningful similar products.
+
+
+
+  Fix: Two-layer hybrid
+
+  - Layer 1: Collaborative filtering for customers with sufficient history (2,162 customers)
+
+  - Layer 2: Segment-based fallback — recommend top products in their segment (1,442 customers)
+
+  
+
+  Interview answer: "Collaborative filtering is powerful but fails on sparse users. Rather than giving bad recommendations, I built a graceful fallback — if we can't personalize, we at least recommend products that customers in the same behavioral
+
+  segment tend to buy. It's less precise but still better than random."
+
+
+
+  ---
+
+  Facebook Prophet — Deep Dive
+
+
+
+  What is it?
+
+
+
+  Prophet is a time series forecasting library from Meta. It decomposes time series into three components:
+
+
+
+  Revenue = Trend + Seasonality + Holidays + Error
+
+
+
+  Why Prophet over ARIMA?
+
+
+
+  ┌───────────────────────────┬─────────┬──────────┐
+
+  │                           │  ARIMA  │ Prophet  │
+
+  ├───────────────────────────┼─────────┼──────────┤
+
+  │ Requires stationarity?    │ Yes     │ No       │
+
+  ├───────────────────────────┼─────────┼──────────┤
+
+  │ Handles missing data?     │ No      │ Yes      │
+
+  ├───────────────────────────┼─────────┼──────────┤
+
+  │ Multiple seasonalities?   │ Hard    │ Easy     │
+
+  ├───────────────────────────┼─────────┼──────────┤
+
+  │ Interpretable components? │ Hard    │ Built-in │
+
+  ├───────────────────────────┼─────────┼──────────┤
+
+  │ Tuning                    │ Complex │ Minimal  │
+
+  └───────────────────────────┴─────────┴──────────┘
+
+
+
+  Interview answer: "I chose Prophet because our data only spans 12 months — not enough for ARIMA to reliably estimate seasonal patterns. Prophet's linear trend model with changepoint_prior_scale=0.05 was conservative enough to not overfit 12 data
+
+  points."
+
+
+
+  Key decisions we made
+
+
+
+  Excluded December 2011:
+
+  Only 9 days of data. Including it would make November → December look like a massive revenue crash, and Prophet would project that false trend forward.
+
+
+
+  No yearly seasonality:
+
+  You need at least 2 full years to fit a yearly seasonal cycle. We only had 1 year — forcing yearly seasonality would have been overfitting noise.
+
+
+
+  Linear growth (not logistic):
+
+  Logistic growth requires a capacity cap (the theoretical maximum revenue). We had no business basis for that number. With only 12 months, it produced oscillating nonsense. Linear growth was more honest.
+
+---
+
+  Apache Airflow — Deep Dive
+
+  
+
+  What is it?
+
+
+
+  Airflow is a workflow orchestration tool. You define pipelines as DAGs (Directed Acyclic Graphs) — a set of tasks with dependencies between them.
+
+
+
+  Key concepts
+
+  
+
+  ┌────────────┬───────────────────────────────────────────────────────┐
+
+  │  Concept   │                        Meaning                        │
+
+  ├────────────┼───────────────────────────────────────────────────────┤
+
+  │ DAG        │ Directed Acyclic Graph — the pipeline definition      │
+
+  ├────────────┼───────────────────────────────────────────────────────┤
+
+  │ Task       │ One unit of work (e.g., clean data, train model)      │
+
+  ├────────────┼───────────────────────────────────────────────────────┤
+
+  │ Operator   │ The type of task (PythonOperator, BashOperator, etc.) │
+
+  ├────────────┼───────────────────────────────────────────────────────┤
+
+  │ Schedule   │ When the DAG runs (daily, weekly, on trigger)         │
+
+  ├────────────┼───────────────────────────────────────────────────────┤
+
+  │ Dependency │ t1 >> t2 means t2 runs after t1                       │
+
+  └────────────┴───────────────────────────────────────────────────────┘
+
+
+
+  TaskFlow API (what we used)
+
+
+
+  The modern way to write Airflow — uses Python decorators instead of verbose operator configurations:
+
+
+
+  @dag(schedule='@weekly')
+
+  def customer_intelligence_pipeline():
+
+
+
+      @task
+
+      def ingest():
+
+          ...
+
+
+
+      @task
+
+      def clean():
+
+          ...
+
+
+
+      ingest() >> clean() >> features() >> train() >> segment() >> recommend()
+
+
+
+  Why Airflow over just running a script?
+
+
+
+  ┌───────────────────────┬───────────────────┬───────────────────────────┐
+
+  │       Scenario        │      Script       │          Airflow          │
+
+  ├───────────────────────┼───────────────────┼───────────────────────────┤
+
+  │ One-time run          │ Fine              │ Overkill                  │
+
+  ├───────────────────────┼───────────────────┼───────────────────────────┤
+
+  │ Weekly automated runs │ Fragile (cron)    │ Designed for this         │
+
+  ├───────────────────────┼───────────────────┼───────────────────────────┤
+
+  │ Step fails halfway    │ Reruns everything │ Reruns from failure point │
+
+  ├───────────────────────┼───────────────────┼───────────────────────────┤
+
+  │ Monitoring            │ None              │ Built-in UI, logs, alerts │
+
+  ├───────────────────────┼───────────────────┼───────────────────────────┤
+
+  │ Parallelism           │ Manual            │ Built-in                  │
+
+  └───────────────────────┴───────────────────┴───────────────────────────┘
+
+  
+
+  Interview answer: "Airflow is what separates a data science project from a data science product. A script you run manually is an experiment. A scheduled DAG that re-runs every week, retries on failure, and has a monitoring UI is a system. That
+
+  distinction matters in industry."
+
+
+
+  ---
+
+  The One Framework for Any Technical Question
+
+  
+
+  When an interviewer asks "how does X work?" use this structure:
+
+
+
+  1. What problem does it solve? (1 sentence)
+
+  2. How it works (2–3 sentences, no jargon)
+
+  3. Why you chose it over alternatives (1 sentence)
+
+  4. What result you got (1 sentence with a number)
+
+
+
+  Example for XGBoost:
+
+
+
+  ▎ "XGBoost solves the problem of learning from structured tabular data. It builds trees sequentially where each tree corrects the errors of the previous one — kind of like a team where each person focuses on what the last person got wrong. I chose it 
+
+  ▎ over Random Forest because it has better regularization for smaller datasets, and over neural networks because our data is tabular not image or text. We achieved 73.47% ROC-AUC with proper cross-validation."
+
