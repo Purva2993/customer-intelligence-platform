@@ -1,5 +1,4 @@
 # Customer Intelligence Platform — Interview Guide
-### Purwa Mugdiya | AI/ML Portfolio Project
 
 ---
 
