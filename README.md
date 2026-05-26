@@ -38,7 +38,7 @@
   ---
   
   ## Project Structure
-
+\'''
  
   customer-intelligence-platform/
   ├── data/                          # Input and output data files
@@ -65,8 +65,7 @@
   │   └── customer_intelligence_dag.py   # Airflow DAG
   ├── run_pipeline.py                # Standalone pipeline runner
   └── requirements.txt
- 
-
+\'''
   ---
   
   ## Setup
