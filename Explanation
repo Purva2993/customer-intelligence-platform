@@ -1,0 +1,434 @@
+"I built an end-to-end customer intelligence platform on 400K+ retail transactions that predicts which customers will churn, segments the customer base, recommends products, and forecasts revenue — all automated through an Airflow pipeline and 
+tracked with MLflow."
+
+
+
+  ---
+
+  The Business Problem (Start Here in Every Interview)
+
+  
+
+  The dataset is from a UK-based online retailer. The business problem is universal:
+
+
+
+  - You have thousands of customers but don't know who's about to leave
+
+  - You don't know who your most valuable customers are
+
+  - You're wasting marketing budget treating all customers the same
+
+  - You have no visibility into future revenue
+
+
+
+  This project solves all four problems using ML.
+
+
+
+  ---
+
+  The 7 Modules — What, Why, and How
+
+  
+
+  Module 1 — Data Exploration (01_exploration.ipynb)
+
+
+
+  What: Understood the shape, quality, and quirks of the raw data.
+
+  Key findings:
+
+  - 541,909 transactions but ~25% had no CustomerID → had to be dropped
+
+  - Negative quantities (returns) needed to be removed
+
+  - Huge outliers in spend (one customer spent £280K)
+
+  
+
+  Interview point: "Before building any model, I profiled the data. I found ~25% of records had no customer ID — keeping them would have introduced noise into every downstream model, so I excluded them early."
+
+
+
+  ---
+
+  Module 2 — Data Cleaning (02_cleaning.ipynb)
+
+  
+
+  What: Removed cancellations (InvoiceNo starting with 'C'), negative quantities, missing CustomerIDs, and computed TotalAmount = Quantity × UnitPrice.
+
+
+
+  Interview point: "Clean data is the foundation. In retail data, returns are encoded as negative quantities. I removed them because a return isn't a purchase behavior — including them would distort RFM features."
+
+
+
+  ---
+
+  Module 3 — Feature Engineering (03_feature_engineering.ipynb)
+
+  
+
+  What: Transformed 400K raw transactions into 13 customer-level behavioral features.
+
+
+
+  Core framework — RFM:
+
+
+
+  ┌───────────┬─────────────────────────────────────────────────┐
+
+  │  Feature  │                     Meaning                     │
+
+  ├───────────┼─────────────────────────────────────────────────┤
+
+  │ Recency   │ Days since last purchase — lower = more engaged │
+
+  ├───────────┼─────────────────────────────────────────────────┤
+
+  │ Frequency │ Number of unique orders — higher = more loyal   │
+
+  ├───────────┼─────────────────────────────────────────────────┤
+
+  │ Monetary  │ Total spend — higher = more valuable            │
+
+  └───────────┴─────────────────────────────────────────────────┘
+
+  
+
+  Enriched features added:
+
+
+
+  ┌───────────────────────────────┬─────────────────────────────────────────────────────────────────┐
+
+  │            Feature            │                         Why it matters                          │
+
+  ├───────────────────────────────┼─────────────────────────────────────────────────────────────────┤
+
+  │ LogMonetary, LogAvgOrderValue │ Monetary is right-skewed — log transform normalizes it          │
+
+  ├───────────────────────────────┼─────────────────────────────────────────────────────────────────┤
+
+  │ IsOneTimeBuyer                │ One-time buyers churn at a much higher rate                     │
+
+  ├───────────────────────────────┼─────────────────────────────────────────────────────────────────┤
+
+  │ PurchaseSpread                │ Days between first and last purchase — captures tenure          │
+
+  ├───────────────────────────────┼─────────────────────────────────────────────────────────────────┤
+
+  │ AvgDaysBetweenPurchases       │ Regularity of buying behavior                                   │
+
+  ├───────────────────────────────┼─────────────────────────────────────────────────────────────────┤
+
+  │ Q1/Q2/Q3_Orders               │ Quarterly order counts — captures purchase trend over time      │
+
+  ├───────────────────────────────┼─────────────────────────────────────────────────────────────────┤
+
+  │ PurchaseTrend                 │ Q3 - Q1 orders — is the customer buying more or less recently?  │
+
+  ├───────────────────────────────┼─────────────────────────────────────────────────────────────────┤
+
+  │ ActiveInQ3                    │ Did the customer buy in the last quarter of the feature window? │
+
+  └───────────────────────────────┴─────────────────────────────────────────────────────────────────┘
+
+
+
+  Interview point: "Raw RFM with 3 features gave ~72% ROC-AUC. Adding 10 more behavioral features — especially quarterly trends and whether a customer was active recently — pushed it to ~74% and gave the model richer signal about customer trajectory."
+
+
+
+  ---
+
+  Module 4 — Churn Prediction (04_churn_prediction.ipynb)
+
+
+
+  What: XGBoost classifier that predicts whether a customer will churn.
+
+
+
+  Key decisions:
+
+
+
+  1. Churn definition — time-based split (most important decision in the project)
+
+  - Feature window: Dec 2010 → Sep 2011 (9 months of behavior)
+
+  - Observation window: Oct → Dec 2011 (3 months to see if they return)
+
+  - If a customer did NOT purchase in Oct–Dec 2011 → Churn = 1
+
+  
+
+  2. Model: XGBoost with GridSearchCV (540 fits, 5-fold cross-validation)
+
+  - Best: max_depth=3, n_estimators=200, learning_rate=0.05, subsample=0.9
+
+
+
+  3. Results:
+
+  - Test ROC-AUC: 0.7347
+
+  - CV ROC-AUC: 0.7389 (very close — model is not overfitting)
+
+
+
+  4. Feature importance:
+
+  - Frequency: 37% — how often they buy is the strongest signal
+
+  - ActiveInQ3: 13% — whether they bought recently matters a lot
+
+  - Recency was surprisingly low at ~5% — because ActiveInQ3 already captures the "recent purchase" signal
+
+  
+
+  5. MLflow tracking: Every experiment was logged — parameters, metrics, and the model artifact — so you can always reproduce the best result.
+
+
+
+  ---
+
+  Module 5 — Customer Segmentation (05_segmentation.ipynb)
+
+  
+
+  What: K-Means clustering to group customers into 4 meaningful segments.
+
+
+
+  How K=4 was chosen:
+
+  - Elbow method: inertia drops sharply up to K=4, then flattens
+
+  - Silhouette score: local peak at K=4 (0.37) — clusters are reasonably well-separated
+
+
+
+  Segments:
+
+
+
+  ┌───────────┬───────┬─────────────────────────────────────────────────────┐
+
+  │  Segment  │ Size  │                       Profile                       │
+
+  ├───────────┼───────┼─────────────────────────────────────────────────────┤
+
+  │ Champions │ 28    │ Recent, frequent, high spend — your VIPs            │
+
+  ├───────────┼───────┼─────────────────────────────────────────────────────┤
+
+  │ Loyal     │ 1,223 │ Regular buyers, moderate spend — your stable base   │
+
+  ├───────────┼───────┼─────────────────────────────────────────────────────┤
+
+  │ At-Risk   │ 1,395 │ Used to buy, now slipping — prime retention targets │
+
+  ├───────────┼───────┼─────────────────────────────────────────────────────┤
+
+  │ Lost      │ 958   │ Low recency, low frequency — likely gone            │
+
+  └───────────┴───────┴─────────────────────────────────────────────────────┘
+
+
+
+  Interview point: "Segmentation tells you WHO the churn model is targeting. An At-Risk customer and a Lost customer both have high churn probability — but the business response is different. An At-Risk customer is worth a retention offer; a Lost
+
+  customer may need a win-back campaign or might not be worth the spend at all."
+
+
+
+  ---
+
+  Module 6 — Product Recommendations (06_recommendations.ipynb)
+
+  
+
+  What: Item-based collaborative filtering — recommends products to each customer.
+
+
+
+  How it works:
+
+  1. Build a customer × product matrix (rows = customers, columns = products, values = purchase count)
+
+  2. Compute cosine similarity between all product pairs
+
+  3. For each customer, find products similar to what they've bought but haven't tried yet
+
+  4. Two-layer hybrid: collaborative filtering for customers with enough history (2,162), segment-based fallback for sparse customers (1,442)
+
+  
+
+  Interview point: "Collaborative filtering says 'customers who bought product A also bought product B.' The cold-start problem is that new or sparse customers don't have enough history. I solved this with a segment fallback — if we can't personalize, we
+
+   recommend the top products from the customer's segment."
+
+
+
+  ---
+
+  Module 7 — Revenue Forecasting (07_revenue_forecast.ipynb)
+
+
+
+  What: Facebook Prophet model that forecasts monthly revenue 3 months ahead.
+
+
+
+  Key findings:
+
+  - Revenue at risk from churned customers: £1,382,321 (22.5% of customer base)
+
+  - Forecast: revenue grows from £1.04M (Dec) → £1.19M (Mar)
+
+  
+
+  Why Prophet: It handles seasonality and trend decomposition automatically, and is interpretable — you can see the trend component separately from the noise.
+
+
+
+  Important choice: We excluded Dec 2011 from training because it only had 9 days of data — including a partial month would have made the model see a false revenue drop and skew the forecast downward.
+
+
+
+  ---
+
+  Module 8 — Pipeline Automation (08_airflow_pipeline.py)
+
+  
+
+  What: Apache Airflow DAG that runs all 6 steps in sequence every week.
+
+
+
+  Architecture:
+
+  ingest → clean → features → train → segment → recommend/forecast
+
+  
+
+  Two delivery options:
+
+  - run_pipeline.py — standalone runner, no Airflow needed, for demo/testing
+
+  - Airflow DAG — production-grade, scheduled, with dependency management
+
+  
+
+  Interview point: "The pipeline means this isn't a one-time analysis. If you drop new transaction data in, the whole system re-runs: features are recomputed, the churn model retrains, segments are refreshed, recommendations are updated. That's what
+
+  makes it a platform, not just a notebook."
+
+
+
+  ---
+
+  Challenges and How We Solved Them
+
+  
+
+  Challenge 1 — Data Leakage (the most important one)
+
+
+
+  Problem: The first version defined churn as Recency >= 90 days — and Recency was also a feature. The model was essentially learning "if Recency >= 90, predict churn = 1." That's not ML, it's just reading the answer.
+
+
+
+  How we caught it: The ROC-AUC was suspiciously high (>0.85) with only 3 features. That was the red flag.
+
+
+
+  Fix: Time-based train/test split. Features from the past, labels from the future. No feature can contain information about the label.
+
+
+
+  Interview value: "This is data leakage — one of the most common and dangerous mistakes in ML. I caught it by questioning why a simple model was performing so well, which is counterintuitive but important."
+
+
+
+  ---
+
+  Challenge 2 — ROC-AUC Ceiling at ~73%
+
+  
+
+  Problem: The dataset has a natural ceiling — 12 months of data, ~4K customers. There's only so much predictive signal available.
+
+
+
+  What we tried:
+
+  - Basic RFM (3 features) → ~72%
+
+  - Enriched features (13 features) → ~73%
+
+  - GridSearchCV (540 hyperparameter combinations) → 73.47%
+
+  
+
+  Resolution: Accepted the honest ceiling. Updated the resume from an aspirational "89% ROC-AUC" to an honest "~74% ROC-AUC."
+
+
+
+  Interview value: "73-74% ROC-AUC on a dataset with this much noise and only 12 months of history is actually a good result. More importantly, the methodology is sound — proper time-based split, cross-validation, no leakage. A reported 89% with leakage
+
+  is worse than an honest 73%."
+
+
+
+  ---
+
+  Challenge 3 — Skewed Distributions
+
+  
+
+  Problem: Monetary and AvgOrderValue had extreme right skew (a few customers spending £50K–£280K). Tree models handle this reasonably, but the scale difference between customers can distort distance-based calculations.
+
+
+
+  Fix: Log transformation (np.log1p) — compresses the extreme values while preserving the ordering. Used log1p instead of log to safely handle any zero values.
+
+
+
+  ---
+
+  Challenge 4 — Prophet Negative Forecasts
+
+  Problem: First attempt used logistic growth with a cap and floor. With only 12 months of data, Prophet had insufficient history to fit the growth curve — it oscillated and produced zero or negative forecasts.
+
+  Fix: Switched to linear growth with changepoint_prior_scale=0.05 (conservative trend changes) and yearly_seasonality=False (not enough data for a full seasonal cycle). Clipped forecast values at zero as a safety net.
+
+  ---
+
+  Challenge 5 — Pipeline Bug (tuple unpacking)
+
+  Problem: features.py had for period, col in [3-element tuples] — two variables unpacking three values. This crashed the pipeline silently.
+
+  Fix: Rewrote the loop as for start, end, col in quarters — explicit variable names for each element.
+
+
+  How to Tell the Story in 2 Minutes (Interview Script)
+
+"I built a customer intelligence platform on the UCI Online Retail dataset — about 400K transactions from a UK retailer. The goal was to answer four business questions: who will churn, who are the most valuable customers, what should we recommend to 
+each customer, and what will revenue look like next quarter.
+The most interesting technical challenge was churn prediction. My first model had data leakage — I was predicting churn using recency as a feature, but I'd also defined churn based on recency. The model was just reading the answer. I caught it 
+because the accuracy was suspiciously high. The fix was a proper time-based split: features from the first 9 months, churn labels from the last 3 months.
+After fixing that and adding 13 engineered features — things like quarterly purchase trends, whether the customer was active recently, log-transformed spend — I used XGBoost with GridSearchCV across 540 hyperparameter combinations and got 73-74% 
+ROC-AUC, which is the honest ceiling for this dataset.
+I layered on K-Means segmentation to classify customers as Champions, Loyal, At-Risk, or Lost — and used that segmentation as a fallback for the recommendation engine when collaborative filtering didn't have enough history. Prophet handled revenue 
+forecasting.
+Everything is wrapped in an Airflow DAG so it runs weekly — new data in, updated predictions out. Experiments are tracked in MLflow so every model version is reproducible."
+
